@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF--8" />
+    <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Catgirl Dream Studio</title>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -27,10 +27,12 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
+<!-- Add Babel Standalone for in-browser JSX/TSX transpilation -->
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
   <body class="bg-gray-900 text-white">
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
+    <!-- Update script type to text/babel and use a relative path for GitHub Pages compatibility -->
+    <script type="text/babel" data-type="module" src="./index.tsx"></script>
   </body>
 </html>
