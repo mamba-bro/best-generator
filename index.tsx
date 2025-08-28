@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, ReactNode } from 'react';
+import React, { useState, useRef, ReactNode, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { GoogleGenAI, Modality } from "@google/genai";
 
@@ -140,160 +140,118 @@ const CATBOY_ATTRIBUTE_OPTIONS: AttributeOptions<CatboyAttributes> = {
 };
 
 // --- SERVICES (from services/geminiService.ts) ---
-if (!process.env.API_KEY) {
-  // In a browser environment, process.env isn't available.
-  // We'll let the user know they need to set it up if the API key is missing.
-  // This check is more for local development; in the deployed app, it's assumed to be present.
-  console.warn("API_KEY is not set. The application will not work without it.");
-}
+const GeminiService = {
+  ai: null as GoogleGenAI | null,
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-const buildCatgirlPrompt = (attributes: CatgirlAttributes, advanced: AdvancedSettings): string => {
-  const accessoryLine = attributes.accessories !== 'None'
-    ? `wearing ${attributes.accessories}`
-    : 'with no notable accessories';
-
-  const corePrompt = `
-    masterpiece, best quality, high resolution, detailed digital illustration of a beautiful anime catgirl.
-    Full body shot, showing the character from head to toe.
-    The art style is ${attributes.artStyle}.
-    Her posture is ${attributes.posture}.
-    She has ${attributes.hairColor} hair styled as ${attributes.hairStyle}, and stunning ${attributes.eyeColor} eyes.
-    She is wearing a stylish ${attributes.outfit}, ${accessoryLine}.
-    She has cute, expressive ${attributes.earType} cat ears and a ${attributes.tailType} tail.
-    Her expression and vibe reflect a ${attributes.personality} personality.
-    The setting is a ${attributes.background}.
-    The character is the central focus, clean lines, vibrant colors, aesthetically pleasing.
-  `.replace(/\s+/g, ' ').trim();
-
-  const negativePrompt = `
-    ${advanced.negativePrompt}, text, watermark, signature, blurry, low quality, deformed, mutated, extra limbs, missing limbs, ugly, poorly drawn hands, poorly drawn face.
-  `.replace(/\s+/g, ' ').trim();
-  
-  return `${corePrompt}\n\nNegative prompt: ${negativePrompt}`;
-};
-
-const buildCatboyPrompt = (attributes: CatboyAttributes, advanced: AdvancedSettings): string => {
-  const accessoryLine = attributes.accessories !== 'None'
-    ? `wearing ${attributes.accessories}`
-    : 'with no notable accessories';
-
-  const corePrompt = `
-    masterpiece, best quality, high resolution, detailed digital illustration of a handsome anime catboy.
-    Full body shot, showing the character from head to toe.
-    The art style is ${attributes.artStyle}.
-    His posture is ${attributes.posture}.
-    He has ${attributes.hairColor} hair styled as ${attributes.hairStyle}, and striking ${attributes.eyeColor} eyes.
-    He is wearing a stylish ${attributes.outfit}, ${accessoryLine}.
-    He has expressive ${attributes.earType} cat ears and a ${attributes.tailType} tail.
-    His expression and vibe reflect a ${attributes.personality} personality.
-    The setting is a ${attributes.background}.
-    The character is the central focus, clean lines, vibrant colors, aesthetically pleasing.
-  `.replace(/\s+/g, ' ').trim();
-  
-  const negativePrompt = `
-    ${advanced.negativePrompt}, text, watermark, signature, blurry, low quality, deformed, mutated, extra limbs, missing limbs, ugly, poorly drawn hands, poorly drawn face, feminine features.
-  `.replace(/\s+/g, ' ').trim();
-
-  return `${corePrompt}\n\nNegative prompt: ${negativePrompt}`;
-};
-
-const handleApiError = (error: unknown): never => {
-  console.error("Error with Gemini API:", error);
-  if (error instanceof Error && error.message.includes('SAFETY')) {
-      throw new Error("The request was blocked due to safety policies. Please adjust your prompt and try again.");
-  }
-  throw new Error("Failed to communicate with the AI model. Please try again later.");
-};
-
-const generateCatgirlImage = async (attributes: CatgirlAttributes, advanced: AdvancedSettings): Promise<string> => {
-  const prompt = buildCatgirlPrompt(attributes, advanced);
-  try {
-    const response = await ai.models.generateImages({
-      model: 'imagen-4.0-generate-001',
-      prompt: prompt,
-      config: {
-        numberOfImages: 1,
-        outputMimeType: 'image/jpeg',
-        aspectRatio: advanced.aspectRatio,
-      },
-    });
-
-    if (!response.generatedImages || response.generatedImages.length === 0) {
-      throw new Error("The AI model did not return an image.");
+  initialize(apiKey: string) {
+    if (!apiKey) {
+      throw new Error("API key is required to initialize Gemini Service.");
     }
+    this.ai = new GoogleGenAI({ apiKey });
+  },
 
-    const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-    return `data:image/jpeg;base64,${base64ImageBytes}`;
-  } catch (error) {
-    handleApiError(error);
-  }
-};
-
-const generateCatboyImage = async (attributes: CatboyAttributes, advanced: AdvancedSettings): Promise<string> => {
-  const prompt = buildCatboyPrompt(attributes, advanced);
-  try {
-    const response = await ai.models.generateImages({
-      model: 'imagen-4.0-generate-001',
-      prompt: prompt,
-      config: {
-        numberOfImages: 1,
-        outputMimeType: 'image/jpeg',
-        aspectRatio: advanced.aspectRatio,
-      },
-    });
-
-    if (!response.generatedImages || response.generatedImages.length === 0) {
-      throw new Error("The AI model did not return an image.");
+  handleApiError(error: unknown): never {
+    console.error("Error with Gemini API:", error);
+    if (error instanceof Error && error.message.includes('API_KEY_INVALID')) {
+      throw new Error("The provided API Key is invalid. Please check and re-enter it.");
     }
+    if (error instanceof Error && error.message.includes('SAFETY')) {
+        throw new Error("The request was blocked due to safety policies. Please adjust your prompt and try again.");
+    }
+    throw new Error("Failed to communicate with the AI model. Please try again later.");
+  },
 
-    const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-    return `data:image/jpeg;base64,${base64ImageBytes}`;
-  } catch (error) {
-    handleApiError(error);
-  }
-};
+  async generateCatgirlImage(attributes: CatgirlAttributes, advanced: AdvancedSettings): Promise<string> {
+    if (!this.ai) throw new Error("AI Service not initialized.");
 
-const remixImage = async (base64ImageData: string, mimeType: string, prompt: string): Promise<string> => {
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image-preview',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              data: base64ImageData,
-              mimeType: mimeType,
-            },
-          },
-          {
-            text: prompt,
-          },
-        ],
-      },
-      config: {
-        responseModalities: [Modality.IMAGE, Modality.TEXT],
-      },
-    });
+    const buildCatgirlPrompt = (attributes: CatgirlAttributes, advanced: AdvancedSettings): string => {
+      const accessoryLine = attributes.accessories !== 'None' ? `wearing ${attributes.accessories}` : 'with no notable accessories';
+      const corePrompt = `masterpiece, best quality, high resolution, detailed digital illustration of a beautiful anime catgirl. Full body shot, showing the character from head to toe. The art style is ${attributes.artStyle}. Her posture is ${attributes.posture}. She has ${attributes.hairColor} hair styled as ${attributes.hairStyle}, and stunning ${attributes.eyeColor} eyes. She is wearing a stylish ${attributes.outfit}, ${accessoryLine}. She has cute, expressive ${attributes.earType} cat ears and a ${attributes.tailType} tail. Her expression and vibe reflect a ${attributes.personality} personality. The setting is a ${attributes.background}. The character is the central focus, clean lines, vibrant colors, aesthetically pleasing.`.replace(/\s+/g, ' ').trim();
+      const negativePrompt = `${advanced.negativePrompt}, text, watermark, signature, blurry, low quality, deformed, mutated, extra limbs, missing limbs, ugly, poorly drawn hands, poorly drawn face.`.replace(/\s+/g, ' ').trim();
+      return `${corePrompt}\n\nNegative prompt: ${negativePrompt}`;
+    };
 
-    if (response.candidates && response.candidates.length > 0) {
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          const base64ImageBytes = part.inlineData.data;
-          const imageMimeType = part.inlineData.mimeType;
-          return `data:${imageMimeType};base64,${base64ImageBytes}`;
+    const prompt = buildCatgirlPrompt(attributes, advanced);
+    try {
+      const response = await this.ai.models.generateImages({
+        model: 'imagen-4.0-generate-001',
+        prompt: prompt,
+        config: {
+          numberOfImages: 1,
+          outputMimeType: 'image/jpeg',
+          aspectRatio: advanced.aspectRatio,
+        },
+      });
+
+      if (!response.generatedImages || response.generatedImages.length === 0) {
+        throw new Error("The AI model did not return an image.");
+      }
+      return `data:image/jpeg;base64,${response.generatedImages[0].image.imageBytes}`;
+    } catch (error) {
+      this.handleApiError(error);
+    }
+  },
+
+  async generateCatboyImage(attributes: CatboyAttributes, advanced: AdvancedSettings): Promise<string> {
+    if (!this.ai) throw new Error("AI Service not initialized.");
+
+    const buildCatboyPrompt = (attributes: CatboyAttributes, advanced: AdvancedSettings): string => {
+      const accessoryLine = attributes.accessories !== 'None' ? `wearing ${attributes.accessories}` : 'with no notable accessories';
+      const corePrompt = `masterpiece, best quality, high resolution, detailed digital illustration of a handsome anime catboy. Full body shot, showing the character from head to toe. The art style is ${attributes.artStyle}. His posture is ${attributes.posture}. He has ${attributes.hairColor} hair styled as ${attributes.hairStyle}, and striking ${attributes.eyeColor} eyes. He is wearing a stylish ${attributes.outfit}, ${accessoryLine}. He has expressive ${attributes.earType} cat ears and a ${attributes.tailType} tail. His expression and vibe reflect a ${attributes.personality} personality. The setting is a ${attributes.background}. The character is the central focus, clean lines, vibrant colors, aesthetically pleasing.`.replace(/\s+/g, ' ').trim();
+      const negativePrompt = `${advanced.negativePrompt}, text, watermark, signature, blurry, low quality, deformed, mutated, extra limbs, missing limbs, ugly, poorly drawn hands, poorly drawn face, feminine features.`.replace(/\s+/g, ' ').trim();
+      return `${corePrompt}\n\nNegative prompt: ${negativePrompt}`;
+    };
+
+    const prompt = buildCatboyPrompt(attributes, advanced);
+    try {
+      const response = await this.ai.models.generateImages({
+        model: 'imagen-4.0-generate-001',
+        prompt: prompt,
+        config: {
+          numberOfImages: 1,
+          outputMimeType: 'image/jpeg',
+          aspectRatio: advanced.aspectRatio,
+        },
+      });
+
+      if (!response.generatedImages || response.generatedImages.length === 0) {
+        throw new Error("The AI model did not return an image.");
+      }
+      return `data:image/jpeg;base64,${response.generatedImages[0].image.imageBytes}`;
+    } catch (error) {
+      this.handleApiError(error);
+    }
+  },
+
+  async remixImage(base64ImageData: string, mimeType: string, prompt: string): Promise<string> {
+    if (!this.ai) throw new Error("AI Service not initialized.");
+    try {
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.5-flash-image-preview',
+        contents: {
+          parts: [
+            { inlineData: { data: base64ImageData, mimeType: mimeType } },
+            { text: prompt },
+          ],
+        },
+        config: {
+          responseModalities: [Modality.IMAGE, Modality.TEXT],
+        },
+      });
+
+      if (response.candidates && response.candidates.length > 0) {
+        for (const part of response.candidates[0].content.parts) {
+          if (part.inlineData) {
+            return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+          }
         }
       }
+      throw new Error("The AI model did not return an image from the remix operation.");
+    } catch (error) {
+      this.handleApiError(error);
     }
-    
-    throw new Error("The AI model did not return an image from the remix operation.");
-
-  } catch (error) {
-    handleApiError(error);
-  }
+  },
 };
-
 
 // --- COMPONENTS (from components folder) ---
 
@@ -456,7 +414,6 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({
     </div>
   );
 };
-
 
 const Header: React.FC = () => {
   return (
@@ -633,7 +590,7 @@ const CatgirlGeneratorPage: React.FC<CatgirlGeneratorPageProps> = ({ onBack }) =
     setError(null);
     setImageUrl(null);
     try {
-      const url = await generateCatgirlImage(attributes, advanced);
+      const url = await GeminiService.generateCatgirlImage(attributes, advanced);
       setImageUrl(url);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred.');
@@ -767,7 +724,7 @@ const CatboyGeneratorPage: React.FC<CatboyGeneratorPageProps> = ({ onBack }) => 
     setError(null);
     setImageUrl(null);
     try {
-      const url = await generateCatboyImage(attributes, advanced);
+      const url = await GeminiService.generateCatboyImage(attributes, advanced);
       setImageUrl(url);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred.');
@@ -904,7 +861,7 @@ const ImageRemixPage: React.FC<ImageRemixPageProps> = ({ onBack }) => {
     setError(null);
     setResultImageUrl(null);
     try {
-      const url = await remixImage(sourceImage.base64, sourceImage.mimeType, prompt);
+      const url = await GeminiService.remixImage(sourceImage.base64, sourceImage.mimeType, prompt);
       setResultImageUrl(url);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred.');
@@ -990,10 +947,93 @@ const ImageRemixPage: React.FC<ImageRemixPageProps> = ({ onBack }) => {
   );
 };
 
+// --- NEW COMPONENT: API KEY MODAL ---
+interface ApiKeyModalProps {
+  onApiKeySubmit: (key: string) => void;
+}
+
+const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ onApiKeySubmit }) => {
+  const [apiKey, setApiKey] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (apiKey.trim()) {
+      onApiKeySubmit(apiKey.trim());
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+      <div className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-8 max-w-md w-full text-center">
+        <h2 className="text-2xl font-bold font-display text-cyan-400 mb-4">Enter API Key</h2>
+        <p className="text-gray-400 mb-6">
+          To use the Dream Studio, please provide your Google Gemini API key. It will be stored only for your current browser session.
+        </p>
+        <form onSubmit={handleSubmit}>
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            placeholder="Enter your Gemini API Key..."
+            autoFocus
+          />
+          <button
+            type="submit"
+            disabled={!apiKey.trim()}
+            className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Start Creating
+          </button>
+        </form>
+      </div>
+       <style>{`
+        @keyframes fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.3s ease-out forwards;
+        }
+      `}</style>
+    </div>
+  );
+};
+
+
 // --- APP (from App.tsx) ---
 const App: React.FC = () => {
+  const [isInitialized, setIsInitialized] = useState(false);
   const [currentPage, setCurrentPage] = useState<Page>('home');
+  
+  useEffect(() => {
+    const savedKey = sessionStorage.getItem('GEMINI_API_KEY');
+    if (savedKey) {
+      try {
+        GeminiService.initialize(savedKey);
+        setIsInitialized(true);
+      } catch (error) {
+        console.error("Failed to initialize with saved key:", error);
+        sessionStorage.removeItem('GEMINI_API_KEY');
+      }
+    }
+  }, []);
 
+  const handleApiKeySubmit = (key: string) => {
+    try {
+        GeminiService.initialize(key);
+        sessionStorage.setItem('GEMINI_API_KEY', key);
+        setIsInitialized(true);
+    } catch (error) {
+        console.error("Failed to initialize with provided key:", error);
+        alert("There was an error initializing the application with your key. Please check the console for details.");
+    }
+  };
+
+  if (!isInitialized) {
+    return <ApiKeyModal onApiKeySubmit={handleApiKeySubmit} />;
+  }
+  
   const navigateTo = (page: Page) => {
     setCurrentPage(page);
   };
