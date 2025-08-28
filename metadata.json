@@ -1,7 +1,5 @@
+
 {
   "name": "Catgirl Dream Studio",
-  "description": "Create your dream catgirl by selecting various attributes and generating a unique AI-powered image. Customize hair, eyes, outfit, and more to bring your perfect character to life.",
-  "requestFramePermissions": [
-    "camera"
-  ]
+  "description": "Create your dream catgirl by selecting various attributes and generating a unique AI-powered image. Customize hair, eyes, outfit, and more to bring your perfect character to life."
 }
